@@ -1,0 +1,6 @@
+{
+  "plansDirectory": "./.claude/plans",
+  "permissions": {
+    "deny": ["Read(.env*)", "Edit(.env*)"]
+  }
+}
