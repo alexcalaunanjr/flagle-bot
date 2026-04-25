@@ -4,6 +4,7 @@ import io
 import logging
 from datetime import date, datetime
 
+from rapidfuzz import fuzz
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -13,8 +14,10 @@ from telegram.ext import (
 )
 
 from app.bot import keyboards, messages
+from app.db import crud
 from app.db.crud import (
     get_active_game,
+    get_active_random_game,
     get_all_countries,
     get_country_by_iso2,
     get_daily_game_completed,
@@ -27,6 +30,9 @@ from app.db.session import AsyncSessionLocal
 from app.game import engine
 
 logger = logging.getLogger(__name__)
+
+# Rate limiting: track last game start per (chat_id, user_id)
+_last_game_start = {}  # (chat_id, user_id) -> datetime
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -46,6 +52,37 @@ def _username(update: Update) -> str | None:
 
 def _is_group(update: Update) -> bool:
     return update.effective_chat.type in ("group", "supergroup")
+
+
+def _check_rate_limit(user_id: int, chat_id: int, cooldown_seconds: int = 2) -> tuple[bool, str]:
+    """Check if user can start a game. Returns (allowed, reason)."""
+    key = (chat_id, user_id)
+    now = _now()
+    last_start = _last_game_start.get(key)
+
+    if last_start:
+        elapsed = (now - last_start).total_seconds()
+        if elapsed < cooldown_seconds:
+            wait = int(cooldown_seconds - elapsed) + 1
+            return False, f"Please wait {wait}s before starting another game."
+
+    _last_game_start[key] = now
+    return True, ""
+
+
+async def _can_start_game(db, chat_id: int, user_id: int) -> tuple[bool, str]:
+    """Check if a game can be started. Returns (allowed, reason)."""
+    # Check for active game
+    active = await get_active_random_game(db, chat_id)
+    if active:
+        return False, "A game is already in progress in this chat."
+
+    # Check rate limit
+    allowed, reason = _check_rate_limit(user_id, chat_id)
+    if not allowed:
+        return False, reason
+
+    return True, ""
 
 
 # ── /start ─────────────────────────────────────────────────────────────────────
@@ -73,6 +110,12 @@ async def cmd_daily(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             return
 
+        # Check if can start game (active game + rate limit)
+        can_start, reason = await _can_start_game(db, chat_id, user_id)
+        if not can_start:
+            await update.effective_message.reply_text(reason)
+            return
+
         countries = await get_all_countries(db)
         state = await engine.start_daily_game(db, chat_id, user_id, is_group, countries, today)
 
@@ -83,6 +126,8 @@ async def cmd_daily(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
     else:
         caption = messages.game_started("daily", state.game.max_guesses, is_group)
+        # Send "New game started!" message first
+        await update.effective_message.reply_text("🎮 New game started!")
 
     await update.effective_message.reply_photo(
         photo=io.BytesIO(state.revealed_image),
@@ -95,10 +140,20 @@ async def cmd_daily(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 # ── /play ──────────────────────────────────────────────────────────────────────
 
 async def cmd_play(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.effective_message.reply_text(
-        "🎲 Choose your flag set:",
-        reply_markup=keyboards.play_mode_keyboard(),
-    )
+    # /play [countries|all]
+    mode = None
+    if context.args:
+        arg = context.args[0].lower()
+        if arg in ("countries", "all"):
+            mode = f"random:{arg}"
+
+    if mode:
+        await _start_random_game_with_mode(update, mode)
+    else:
+        await update.effective_message.reply_text(
+            "🎲 Choose your flag set:",
+            reply_markup=keyboards.play_mode_keyboard(),
+        )
 
 
 async def _start_random_game_with_mode(
@@ -111,12 +166,21 @@ async def _start_random_game_with_mode(
     is_group = _is_group(update)
 
     async with AsyncSessionLocal() as db:
+        # Check if can start game (active game + rate limit)
+        can_start, reason = await _can_start_game(db, chat_id, user_id)
+        if not can_start:
+            await update.effective_message.reply_text(reason)
+            return
+
         if mode == "random:countries":
             countries = await get_sovereign_countries(db)
         else:  # random:all
             countries = await get_all_countries(db)
 
         state = await engine.start_random_game(db, chat_id, user_id, is_group, countries, today, mode=mode)
+
+    # Send "New game started!" message first
+    await update.effective_message.reply_text("🎮 New game started!")
 
     await update.effective_message.reply_photo(
         photo=io.BytesIO(state.revealed_image),
@@ -137,6 +201,142 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(messages.no_stats())
     else:
         await update.message.reply_text(messages.stats_message(stats), parse_mode=ParseMode.MARKDOWN)
+
+
+# ── /help ──────────────────────────────────────────────────────────────────────
+
+async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(messages.help_message(), parse_mode=ParseMode.MARKDOWN)
+
+
+# ── /end ───────────────────────────────────────────────────────────────────────
+
+async def cmd_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+    user_id = update.effective_user.id
+    today = _today()
+
+    async with AsyncSessionLocal() as db:
+        game = await crud.get_active_random_game(db, chat_id)
+        if not game:
+            game = await crud.get_active_game(db, chat_id, "daily", today)
+        if not game:
+            await update.message.reply_text(messages.no_active_game())
+            return
+
+        flag_bytes, country_name = await engine.give_up(
+            db, game, user_id, _username(update), today
+        )
+
+    await update.message.reply_photo(
+        photo=io.BytesIO(flag_bytes),
+        caption=messages.game_ended(country_name),
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=keyboards.play_again_keyboard(),
+    )
+
+
+# ── /guess {country} ───────────────────────────────────────────────────────────
+
+async def cmd_guess(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not context.args:
+        await update.message.reply_text("Usage: /guess {country name}")
+        return
+
+    country_query = " ".join(context.args).strip()
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    today = _today()
+    now = _now()
+
+    async with AsyncSessionLocal() as db:
+        # Get active game
+        game = await crud.get_active_random_game(db, chat_id)
+        if not game:
+            game = await crud.get_active_game(db, chat_id, "daily", today)
+        if not game:
+            await update.message.reply_text(messages.no_active_game())
+            return
+
+        # Get all countries and fuzzy match
+        all_countries = await get_all_countries(db)
+        best_match = None
+        best_score = 0
+
+        for country in all_countries:
+            # Try matching both common_name and name
+            names_to_try = [country.name]
+            if country.common_name:
+                names_to_try.append(country.common_name)
+
+            for name in names_to_try:
+                score = fuzz.token_set_ratio(country_query.lower(), name.lower())
+                if score > best_score:
+                    best_score = score
+                    best_match = country
+
+        # Require minimum match quality (70% similarity)
+        if not best_match or best_score < 70:
+            await update.message.reply_text(
+                messages.country_not_found(country_query),
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+
+        # Check if already guessed
+        existing_guesses = await get_guesses_for_game(db, game.id)
+        already_guessed_ids = {g.country_id for g in existing_guesses}
+        if best_match.id in already_guessed_ids:
+            await update.message.reply_text(
+                messages.already_guessed(best_match.common_name or best_match.name),
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+
+        # Process guess
+        result = await engine.process_guess(
+            db, game, best_match, user_id, _username(update), today, now
+        )
+
+    guesser_name = _username(update)
+
+    if result.timed_out:
+        await update.message.reply_photo(
+            photo=io.BytesIO(result.revealed_image),
+            caption=messages.timed_out(result.target_country_name),
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=keyboards.play_again_keyboard(),
+        )
+    elif result.is_correct:
+        caption = messages.correct_guess(result.target_country_name, result.guesses_used, guesser_name)
+        await update.message.reply_photo(
+            photo=io.BytesIO(result.revealed_image),
+            caption=caption,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=keyboards.play_again_keyboard(),
+        )
+    elif result.is_game_over:
+        caption = messages.game_lost(result.target_country_name)
+        await update.message.reply_photo(
+            photo=io.BytesIO(result.revealed_image),
+            caption=caption,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=keyboards.play_again_keyboard(),
+        )
+    else:
+        caption = messages.wrong_guess(
+            result.guessed_country_name,
+            result.guesses_used,
+            result.max_guesses,
+            result.overlap_pct,
+            result.seconds_left,
+        )
+        await update.message.reply_photo(
+            photo=io.BytesIO(result.revealed_image),
+            caption=caption,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=keyboards.game_keyboard(game.id),
+        )
 
 
 # ── Callback query handler (inline keyboard buttons) ──────────────────────────
@@ -320,4 +520,7 @@ def register_handlers(application) -> None:
     application.add_handler(CommandHandler("daily", cmd_daily))
     application.add_handler(CommandHandler("play", cmd_play))
     application.add_handler(CommandHandler("stats", cmd_stats))
+    application.add_handler(CommandHandler("help", cmd_help))
+    application.add_handler(CommandHandler("end", cmd_end))
+    application.add_handler(CommandHandler("guess", cmd_guess))
     application.add_handler(CallbackQueryHandler(handle_callback))

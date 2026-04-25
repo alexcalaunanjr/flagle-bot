@@ -10,8 +10,13 @@ WELCOME = (
     "guessed flag will be revealed — building up a picture over time.\n\n"
     "Commands:\n"
     "  /daily — today's daily challenge\n"
-    "  /play — random flag\n"
-    "  /stats — your statistics\n\n"
+    "  /play — random flag (choose set)\n"
+    "  /play countries — random flag (sovereign countries only)\n"
+    "  /play all — random flag (all flags including territories)\n"
+    "  /guess {country} — guess via text\n"
+    "  /end — give up and reveal the flag\n"
+    "  /stats — your statistics\n"
+    "  /help — show this message\n\n"
     "Tap *🌍 Guess* to open the country picker!"
 )
 
@@ -102,3 +107,28 @@ def stats_message(s: UserStats) -> str:
 
 def no_stats() -> str:
     return "You haven't played any games yet. Try /daily or /play!"
+
+
+def help_message() -> str:
+    return (
+        "🌍 *Flagle Bot Commands*\n\n"
+        "▸ /daily — today's daily challenge\n"
+        "▸ /play — random game (choose flag set)\n"
+        "▸ /play countries — random game (sovereign countries only)\n"
+        "▸ /play all — random game (all flags including territories)\n"
+        "▸ /guess {country} — guess by country name\n"
+        "▸ /end — give up and reveal the flag\n"
+        "▸ /stats — view your statistics\n"
+        "▸ /help — show this message\n\n"
+        "Just start a game with /daily or /play, then either:\n"
+        "  • Tap the 🌍 *Guess* button to pick from the country list\n"
+        "  • Use /guess to type a country name (fuzzy matching supported)"
+    )
+
+
+def country_not_found(query: str) -> str:
+    return f"Couldn't find a country matching *{query}*. Try /guess with a different name?"
+
+
+def game_ended(country_name: str) -> str:
+    return f"🏳️ Game ended.\n\nThe flag was *{country_name}*."

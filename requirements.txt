@@ -9,3 +9,4 @@ scikit-image>=0.24.0
 pydantic-settings==2.7.0
 httpx==0.28.1
 alembic==1.14.0
+rapidfuzz==3.10.1
