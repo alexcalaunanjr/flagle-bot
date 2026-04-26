@@ -110,8 +110,23 @@ def _encode_png(arr_u8: np.ndarray, mode: str = "RGB") -> bytes:
     return buf.getvalue()
 
 
+def _load_init_image_array() -> np.ndarray:
+    """Load init.png and return as RGBA numpy array, matching flag dimensions."""
+    from pathlib import Path
+    init_path = Path(__file__).parent.parent / "assets" / "init.png"
+    try:
+        img = Image.open(init_path)
+        # Resize to match flag dimensions
+        img = img.resize((settings.flag_width, settings.flag_height), Image.Resampling.LANCZOS)
+        img = img.convert("RGBA")
+        return np.array(img, dtype=np.uint8)
+    except FileNotFoundError:
+        # Fallback: transparent background
+        return np.zeros((settings.flag_height, settings.flag_width, 4), dtype=np.uint8)
+
+
 def build_revealed_image(target_iso2: str, guessed_iso2_list: list[str]) -> tuple[bytes, float]:
-    """Build the progressively revealed flag image and return (PNG bytes, overlap_pct)."""
+    """Build the progressively revealed flag image on top of init.png and return (PNG bytes, overlap_pct)."""
     target_arr = np.array(get_flag_image(target_iso2), dtype=np.uint8)
 
     target_colored_mask = _is_colored_mask(target_arr)
@@ -130,7 +145,9 @@ def build_revealed_image(target_iso2: str, guessed_iso2_list: list[str]) -> tupl
     else:
         overlap_pct = 0.0
 
-    output = np.zeros_like(target_arr)
+    # Start with init.png as the base
+    output = _load_init_image_array()
+    # Overlay revealed target flag pixels
     output[combined_mask] = target_arr[combined_mask]
     output[:, :, 3] = 255
 
