@@ -154,6 +154,19 @@ def build_black_image() -> tuple[bytes, float]:
     return buf.getvalue(), 0.0
 
 
+def build_init_image() -> tuple[bytes, float]:
+    """Load the init.png asset and return as PNG bytes."""
+    from pathlib import Path
+    init_path = Path(__file__).parent.parent / "assets" / "init.png"
+    try:
+        img = Image.open(init_path).convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue(), 0.0
+    except FileNotFoundError:
+        return build_black_image()
+
+
 # ─────────────────────────────── Visualizations ───────────────────────────────
 
 

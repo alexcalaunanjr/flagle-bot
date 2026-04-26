@@ -80,3 +80,15 @@ def play_again_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("📅 Daily", callback_data="play:daily"),
         ]
     ])
+
+
+def random_game_button_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎲 Random game", callback_data="play:random")]
+    ])
+
+
+def daily_button_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📅 Daily", callback_data="play:daily")]
+    ])

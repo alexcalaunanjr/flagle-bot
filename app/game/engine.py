@@ -14,7 +14,7 @@ from app.config import settings
 from app.db import crud
 from app.db.models import Country, GameSession, Guess
 from app.game.daily import daily_country
-from app.game.image import build_black_image, build_full_flag_image, build_revealed_image
+from app.game.image import build_black_image, build_full_flag_image, build_init_image, build_revealed_image
 
 
 @dataclass
@@ -59,7 +59,7 @@ async def start_daily_game(
     target = daily_country(today, countries)
     max_guesses = settings.max_guesses_group if is_group else settings.max_guesses_dm
     game = await crud.create_game(db, chat_id, creator_user_id, "daily", target.id, max_guesses, today)
-    img_bytes, overlap_pct = build_black_image()
+    img_bytes, overlap_pct = build_init_image()
     return GameState(
         game=game,
         guesses=[],
@@ -89,7 +89,7 @@ async def start_random_game(
     target = random.choice(countries)
     max_guesses = settings.max_guesses_group if is_group else settings.max_guesses_dm
     game = await crud.create_game(db, chat_id, creator_user_id, mode, target.id, max_guesses, today)
-    img_bytes, overlap_pct = build_black_image()
+    img_bytes, overlap_pct = build_init_image()
     return GameState(
         game=game,
         guesses=[],
@@ -225,7 +225,7 @@ async def _build_game_state(db: AsyncSession, game: GameSession) -> GameState:
     if guessed_iso2_list:
         img_bytes, overlap_pct = build_revealed_image(target.iso2, guessed_iso2_list)
     else:
-        img_bytes, overlap_pct = build_black_image()
+        img_bytes, overlap_pct = build_init_image()
 
     return GameState(
         game=game,

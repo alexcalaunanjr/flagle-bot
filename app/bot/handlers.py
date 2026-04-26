@@ -232,7 +232,14 @@ async def cmd_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         photo=io.BytesIO(flag_bytes),
         caption=messages.game_ended(country_name),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=keyboards.play_again_keyboard(),
+    )
+    await update.message.reply_text(
+        "What's next?",
+        reply_markup=keyboards.random_game_button_keyboard(),
+    )
+    await update.message.reply_text(
+        "",
+        reply_markup=keyboards.daily_button_keyboard(),
     )
 
 
@@ -305,7 +312,14 @@ async def cmd_guess(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             photo=io.BytesIO(result.revealed_image),
             caption=messages.timed_out(result.target_country_name),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=keyboards.play_again_keyboard(),
+        )
+        await update.message.reply_text(
+            "What's next?",
+            reply_markup=keyboards.random_game_button_keyboard(),
+        )
+        await update.message.reply_text(
+            "",
+            reply_markup=keyboards.daily_button_keyboard(),
         )
     elif result.is_correct:
         caption = messages.correct_guess(result.target_country_name, result.guesses_used, guesser_name)
@@ -313,7 +327,14 @@ async def cmd_guess(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             photo=io.BytesIO(result.revealed_image),
             caption=caption,
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=keyboards.play_again_keyboard(),
+        )
+        await update.message.reply_text(
+            "What's next?",
+            reply_markup=keyboards.random_game_button_keyboard(),
+        )
+        await update.message.reply_text(
+            "",
+            reply_markup=keyboards.daily_button_keyboard(),
         )
     elif result.is_game_over:
         caption = messages.game_lost(result.target_country_name)
@@ -321,7 +342,14 @@ async def cmd_guess(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             photo=io.BytesIO(result.revealed_image),
             caption=caption,
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=keyboards.play_again_keyboard(),
+        )
+        await update.message.reply_text(
+            "What's next?",
+            reply_markup=keyboards.random_game_button_keyboard(),
+        )
+        await update.message.reply_text(
+            "",
+            reply_markup=keyboards.daily_button_keyboard(),
         )
     else:
         caption = messages.wrong_guess(
@@ -428,7 +456,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 photo=io.BytesIO(result.revealed_image),
                 caption=messages.timed_out(result.target_country_name),
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=keyboards.play_again_keyboard(),
+            )
+            await query.message.reply_text(
+                "What's next?",
+                reply_markup=keyboards.random_game_button_keyboard(),
+            )
+            await query.message.reply_text(
+                "",
+                reply_markup=keyboards.daily_button_keyboard(),
             )
             await query.edit_message_reply_markup(reply_markup=None)
         elif result.is_correct:
@@ -437,7 +472,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 photo=io.BytesIO(result.revealed_image),
                 caption=caption,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=keyboards.play_again_keyboard(),
+            )
+            await query.message.reply_text(
+                "What's next?",
+                reply_markup=keyboards.random_game_button_keyboard(),
+            )
+            await query.message.reply_text(
+                "",
+                reply_markup=keyboards.daily_button_keyboard(),
             )
             await query.edit_message_reply_markup(reply_markup=None)
         elif result.is_game_over:
@@ -446,7 +488,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 photo=io.BytesIO(result.revealed_image),
                 caption=caption,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=keyboards.play_again_keyboard(),
+            )
+            await query.message.reply_text(
+                "What's next?",
+                reply_markup=keyboards.random_game_button_keyboard(),
+            )
+            await query.message.reply_text(
+                "",
+                reply_markup=keyboards.daily_button_keyboard(),
             )
             await query.edit_message_reply_markup(reply_markup=None)
         else:
@@ -485,7 +534,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             photo=io.BytesIO(flag_bytes),
             caption=messages.gave_up(country_name),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=keyboards.play_again_keyboard(),
+        )
+        await query.message.reply_text(
+            "What's next?",
+            reply_markup=keyboards.random_game_button_keyboard(),
+        )
+        await query.message.reply_text(
+            "",
+            reply_markup=keyboards.daily_button_keyboard(),
         )
         await query.edit_message_reply_markup(reply_markup=None)
 
@@ -493,7 +549,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     elif data == "play:daily":
         await cmd_daily(update, context)
     elif data == "play:random":
-        await query.edit_message_reply_markup(reply_markup=keyboards.play_mode_keyboard())
+        await query.message.reply_text(
+            "🎲 Choose your flag set:",
+            reply_markup=keyboards.play_mode_keyboard(),
+        )
     elif data == "play:random:countries":
         await _start_random_game_with_mode(update, "random:countries")
     elif data == "play:random:all":
